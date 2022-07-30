@@ -37,7 +37,7 @@ class latent_ideology:
     -  **sources** : str (default = 'source'). 
             Name of the column of the sources
     -  **weight** : bool (default = False) -if False, time of execution takes longer-
-            Does your data have a weight column inicating how many times a target had interacted with each source?
+            Does your data have a weight column indicating how many times a target had interacted with each source?
             (if True, specify the column name in the next parameter).
     -  **weight_name** : str (default = False)
             if weight==True, specify the name of the column associated with the weight of the interaction target/source.
@@ -220,7 +220,7 @@ class latent_ideology:
     return df_scores_target, df_scores_sources
 
 #Compute the scores for rows and columns using the built-it correspondence analysis method as stated in the bibliography
-  def apply_method(self,  m = None ,n=2, targets = 'target', sources= 'source'):
+  def apply_method(self,  m = None ,n=2, targets = 'target', sources= 'source', weight = False, weight_name = 'weight'):
     """
     Apply the correspondence analysis method to calculate the row scores given a source-target interaction dataframe.
     The column scores (or the score of the sources) correspond to the mean othe target scores
@@ -239,11 +239,16 @@ class latent_ideology:
             Name of the column of the targets
     -  **sources** : str (default = 'source'). 
             Name of the column of the sources
+    -  **weight** : bool (default = False) -if False, time of execution takes longer-
+            Does your data have a weight column indicating how many times a target had interacted with each source?
+            (if True, specify the column name in the next parameter).
+    -  **weight_name** : str (default = False)
+            if weight==True, specify the name of the column associated with the weight of the interaction target/source.
 
     """
 
     #Adjacency matrix & filtering
-    df_filtered, df_adjacency = self.make_adjacency(m,n,targets=targets, sources=sources, filtered_df=True)
+    df_filtered, df_adjacency = self.make_adjacency(m,n,targets=targets, sources=sources, filtered_df=True, weight=weight, weight_name=weight_name)
 
     #DataFrame of targets (rows) scores
     A = df_adjacency.to_numpy(dtype = int) #for row scores

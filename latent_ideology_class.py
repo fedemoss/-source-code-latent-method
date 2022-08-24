@@ -25,15 +25,17 @@ class latent_ideology:
     self.df = df
 
   #from dataframe, return filtered pandas adjacency matrix 
-  def make_adjacency(self, m = None ,n=2, targets = 'target', sources= 'source', weight = False, weight_name = 'weight',filtered_df = False, detailed_target_list = False):
+  def make_adjacency(self, m = None ,n = 2, k=None, targets = 'target', sources= 'source', weight = False, weight_name = 'weight',filtered_df = False, detailed_target_list = False):
     """
     Create weighted adjacency matrix from unfiltered -optionally- pandas dataframe input.
     The input dataframe consist of interactions between a target and a source
     ## Parameters:
     -  **m** : int (default = None). 
-            Number of sources to consider (default = consider all sources in the dataset)
+            Number of sources to consider (default = consider all sources in the dataset).
     -  **n** : int (default = 2). 
-            Number of distinct sources interacting with each target 
+            Number of distinct sources interacting with each target.
+    -  **k** : int (default = None)
+            Maximum interactions between each target and all sources (default = consider all existing interactions).
     -  **targets** : str (default = 'target'). 
             Name of the column of the targets
     -  **sources** : str (default = 'source'). 
@@ -47,43 +49,45 @@ class latent_ideology:
             Returns a filtered (given thresholds m,n) dataframe, similar to the input one.
             It also adds a column associated with the weight of the connection beetween a 
             target and a source 
-    - **detailed_target_list** : bool (default = False) -if True, time of execution takes longer-
+    - **detailed_target_list** : bool (default = False) 
             returns another dataframe indicating which sources had the targets interacted with.
     """
-    df = self.df
+    df = self.df.copy()
     df['target'] = df[targets]
     df['source'] = df[sources]
     if weight==True:
       df['weight'] = df[weight_name]
     if m==None:
       m = len(df.target) 
+    if k==None:
+      k = df[['target','source']].groupby('target').count().sort_values(by = 'source', ascending = False).source[0] + 1 #just in case
+
+    #Threshold 0: Interactions limit
+    df2 = pd.DataFrame()
+    df2['counter'] = df[['target','source']].groupby('target').count().sort_values(by = 'source', ascending = False).source
+    interactions_count = df2.query('counter < @k').index
+    df_th0 = df[df.target.isin(interactions_count)].copy()  
 
     #Threshold 1: number of distinct sources interacting with each target
-    groups_dict_target = df[['target','source']].groupby(by=['target']).groups #dict
+    groups_dict_target = df_th0[['target','source']].groupby(by=['target']).groups #dict
     keys_list = list(groups_dict_target.keys()) #users (keys)
     sources = []
     lengths = []
-    if detailed_target_list == True:  
-      for key in keys_list:
-        source_list_index = list(groups_dict_target[key]) #sources list for each target 
-        source_asocciated = []
-        for s in source_list_index:
-          source_asocciated.append(df.source[s])
-        sources.append(list(set(source_asocciated)))
-        lengths.append(len(list(set(source_asocciated)))) #list of sources lenghts
-      data = {'target':keys_list, 'sources_associated':sources, 'total_retuits':lengths}#new df
-      df3 = pd.DataFrame(data).sort_values(by=['total_retuits'], ascending=False).reset_index(drop=True)
-      df_targets_associated = df3.query("total_retuits >= @n")
-      targets_threshold_1 = list(df_targets_associated['target'])
-      df_filtered_th1 = df.query('(target == @targets_threshold_1)')
-    else:
-      for key in keys_list:
-        source_list_index = list(groups_dict_target[key]) #sources list for each target
-        lengths.append(len(source_list_index))
-      data = {'target':keys_list, 'total_retuits':lengths}#new df
-      df3 = pd.DataFrame(data).sort_values(by=['total_retuits'], ascending=False).reset_index(drop=True)
-      targets_threshold_1 = list(df3.query("total_retuits >= @n ")['target'])
-      df_filtered_th1 = df.query('(target == @targets_threshold_1)')
+    total_interactions = []
+    
+    for key in keys_list:
+      source_list_index = list(groups_dict_target[key]) #sources list for each target 
+      source_asocciated = []
+      for s in source_list_index:
+        source_asocciated.append(df.source[s])
+      total_interactions.append(len(source_list_index))
+      sources.append(list(set(source_asocciated)))
+      lengths.append(len(list(set(source_asocciated)))) #list of sources lenghts
+    data = {'target':keys_list, 'sources_associated':sources, 'total_distinct_sources':lengths, 'total_interactions':total_interactions}#new df
+    df3 = pd.DataFrame(data).sort_values(by=['total_distinct_sources'], ascending=False).reset_index(drop=True)
+    df_targets_associated = df3.query("total_distinct_sources >= @n")
+    targets_threshold_1 = list(df_targets_associated['target'])
+    df_filtered_th1 = df_th0.query('(target == @targets_threshold_1)')
     
     #Threshold 2: number of sources
     top_sources = df_filtered_th1[['target','source']].groupby('source').count().sort_values(by = 'target', ascending = False).head(m).index
@@ -222,7 +226,7 @@ class latent_ideology:
     return df_scores_target, df_scores_sources
 
 #Compute the scores for rows and columns using the built-it correspondence analysis method as stated in the bibliography
-  def apply_method(self,  m = None ,n=2, targets = 'target', sources= 'source', weight = False, weight_name = 'weight'):
+  def apply_method(self, m = None, n = 2, k = None, targets = 'target', sources= 'source', weight = False, weight_name = 'weight'):
     """
     Apply the correspondence analysis method to calculate the row scores given a source-target interaction dataframe.
     The column scores (or the score of the sources) correspond to the mean othe target scores
@@ -236,7 +240,9 @@ class latent_ideology:
     -  **m** : int (default = None). 
             Number of sources to consider (default = consider all sources in the dataset)
     -  **n** : int (default = 2). 
-            Number of distinct sources interacting with each target 
+            Number of distinct sources interacting with each target
+    -  **k** : int (default = None)
+            Maximum interactions between each target and all sources (default = consider all existing interactions). 
     -  **targets** : str (default = 'target'). 
             Name of the column of the targets
     -  **sources** : str (default = 'source'). 
@@ -250,7 +256,7 @@ class latent_ideology:
     """
 
     #Adjacency matrix & filtering
-    df_filtered, df_adjacency = self.make_adjacency(m,n,targets=targets, sources=sources, filtered_df=True, weight=weight, weight_name=weight_name)
+    df_filtered, df_adjacency = self.make_adjacency(m=m,n=n,k=k,targets=targets, sources=sources, filtered_df=True, weight=weight, weight_name=weight_name)
 
     #DataFrame of targets (rows) scores
     A = df_adjacency.to_numpy(dtype = int) #for row scores

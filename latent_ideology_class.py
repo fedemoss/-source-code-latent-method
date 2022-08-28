@@ -60,7 +60,7 @@ class latent_ideology:
     if m==None:
       m = len(df.target) 
     if k==None:
-      k = df[['target','source']].groupby('target').count().sort_values(by = 'source', ascending = False).source[0] + 1 #just in case
+      k = df[['target','source']].groupby('target').count().sort_values(by = 'source', ascending = False).source.iloc[0] + 1 #just in case
 
     #Threshold 0: Interactions limit
     df2 = pd.DataFrame()

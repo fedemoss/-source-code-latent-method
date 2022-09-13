@@ -25,7 +25,7 @@ class latent_ideology:
     self.df = df
 
   #from dataframe, return filtered pandas adjacency matrix 
-  def make_adjacency(self, m = None ,n = 2, k=None, targets = 'target', sources= 'source', weight = False, weight_name = 'weight',filtered_df = False, detailed_target_list = False):
+  def make_adjacency(self, m = None ,n = 2, k=None, targets = 'target', sources= 'source', weight = False, weight_name = 'weight',filtered_df = False, detailed_lists = False, drop = None):
     """
     Create weighted adjacency matrix from unfiltered -optionally- pandas dataframe input.
     The input dataframe consist of interactions between a target and a source
@@ -49,8 +49,10 @@ class latent_ideology:
             Returns a filtered (given thresholds m,n) dataframe, similar to the input one.
             It also adds a column associated with the weight of the connection beetween a 
             target and a source 
-    - **detailed_target_list** : bool (default = False) 
-            returns another dataframe indicating which sources had the targets interacted with.
+    - **detailed_lists** : bool (default = False) 
+            Returns 2 extra dataframes indicating which sources had the targets interacted with, and viceversa.
+    - **drop** : list (default = None).
+            List of targets/sources to drop before applying the method.
     """
     df = self.df.copy()
     df['target'] = df[targets]
@@ -60,7 +62,20 @@ class latent_ideology:
     if m==None:
       m = len(df.target) 
     if k==None:
-      k = df[['target','source']].groupby('target').count().sort_values(by = 'source', ascending = False).source.iloc[0] + 1 #just in case
+      k = 1e23 #enourmous number that resembles the non-filtering case
+
+    #Drop them!
+    if drop!=None:
+      target_todrop = []
+      source_todrop = []
+      for obj in drop:
+        target_todrop.append(list(df[df.target == obj].index))
+        source_todrop.append(list(df[df.source == obj].index))
+      x1=sum(target_todrop, [])
+      x2=sum(source_todrop, [])
+      fulldrop = x1+x2
+      df = df.drop(fulldrop, axis=0).reset_index(drop=True).copy()
+
 
     #Threshold 0: Interactions limit
     df2 = pd.DataFrame()
@@ -97,7 +112,7 @@ class latent_ideology:
     source_list = list(df_filtered_th1_th2.source.unique())
     target_list = list(df_filtered_th1_th2.target.unique())
 
-    if detailed_target_list:
+    if detailed_lists:
       targets_info = df_targets_associated[df_targets_associated.target.isin(target_list)]
 
     #Weights
@@ -114,6 +129,21 @@ class latent_ideology:
     else:
       dfw = df_filtered_th1_th2
 
+    #Detailed source list
+    if detailed_lists:
+      groups_dict = dfw[['source','target']].set_index('target').groupby(by=['source']).groups
+      keys_list = list(groups_dict.keys()) #influencers (keys)
+      targets_asoc = []
+      lengths = []
+      for key in keys_list:
+        target_list = list(groups_dict[key]) #target list 
+        targets_asoc.append(target_list)
+        lengths.append(len(target_list))
+
+      data_new = {'source':[str(key) for key in keys_list], 'targets_associated': targets_asoc, 'total_distinct_targets': lengths} #Create dataframe
+      sources_info = pd.DataFrame(data_new).sort_values(by=['total_distinct_targets'], ascending=False).reset_index(drop=True)
+
+
     #Final matrix
     source_col = []
     for s in source_list:
@@ -123,14 +153,14 @@ class latent_ideology:
 
     final_data = pd.concat(source_col).fillna(0).groupby('target').sum()
 
-    if filtered_df == True and detailed_target_list == False:
+    if filtered_df == True and detailed_lists == False:
       return dfw, final_data
-    elif filtered_df == False and detailed_target_list == False:
+    elif filtered_df == False and detailed_lists == False:
       return final_data
-    elif filtered_df == True and detailed_target_list == True:
-      return dfw, targets_info, final_data
-    elif filtered_df == False and detailed_target_list == True:
-      return targets_info, final_data
+    elif filtered_df == True and detailed_lists == True:
+      return dfw, targets_info, sources_info, final_data
+    elif filtered_df == False and detailed_lists == True:
+      return targets_info, sources_info, final_data
     
 
   #Use the correpondence analysis method to calculate the scores of a given adjacency matrix in the rows projection
@@ -226,7 +256,7 @@ class latent_ideology:
     return df_scores_target, df_scores_sources
 
 #Compute the scores for rows and columns using the built-it correspondence analysis method as stated in the bibliography
-  def apply_method(self, m = None, n = 2, k = None, targets = 'target', sources= 'source', weight = False, weight_name = 'weight'):
+  def apply_method(self, m = None, n = 2, k = None, targets = 'target', sources= 'source', weight = False, weight_name = 'weight', detailed_lists = False, drop = None, weighted_mean=False):
     """
     Apply the correspondence analysis method to calculate the row scores given a source-target interaction dataframe.
     The column scores (or the score of the sources) correspond to the mean othe target scores
@@ -251,12 +281,22 @@ class latent_ideology:
             Does your data have a weight column indicating how many times a target had interacted with each source?
             (if True, specify the column name in the next parameter).
     -  **weight_name** : str (default = False)
-            if weight==True, specify the name of the column associated with the weight of the interaction target/source.
+            If weight==True, specify the name of the column associated with the weight of the interaction target/source.
+    -  **detailed_lists** : bool (deafault = False)
+            If True, returns 2 extra dataframes indicating which sources had the targets interacted with, and viceversa.
+    - **drop** : list (default = None).
+            List of targets/sources to drop before applying the method.
+    - **weighted_mean** : Bool (default = False)
+            Calculate the score of the sources by a weighted mean of the scores of the targets. If False, the scores are calculated by the
+            non-weighted mean, as the bibliography indicates.       
 
     """
 
     #Adjacency matrix & filtering
-    df_filtered, df_adjacency = self.make_adjacency(m=m,n=n,k=k,targets=targets, sources=sources, filtered_df=True, weight=weight, weight_name=weight_name)
+    if detailed_lists:
+      df_filtered, targets_info, sources_info ,df_adjacency = self.make_adjacency(m=m,n=n,k=k,targets=targets, sources=sources, filtered_df=True, weight=weight, weight_name=weight_name, detailed_lists=detailed_lists, drop=drop)
+    else:
+      df_filtered, df_adjacency = self.make_adjacency(m=m,n=n,k=k,targets=targets, sources=sources, filtered_df=True, weight=weight, weight_name=weight_name, detailed_lists=detailed_lists, drop=drop)
 
     #DataFrame of targets (rows) scores
     A = df_adjacency.to_numpy(dtype = int) #for row scores
@@ -270,14 +310,50 @@ class latent_ideology:
     df_final['target'] = df_final.index
     df_final = df_final.reset_index(drop=True).copy()
 
-    groups_dict = df_final[['source','score']].set_index('score').groupby(by=['source']).groups
-    keys_list = list(groups_dict.keys()) #los influencers (son keys)
-    mean_scores = []
-    for key in keys_list:
-      score_list = list(groups_dict[key]) #lista de scores
-      mean_scores.append(np.mean(score_list))
+    if weighted_mean:
+      groups_dict = df_final[['source','score','weight']].set_index('score').groupby(by=['source', 'weight']).groups
 
-    data_new = {'source':[str(key) for key in keys_list], 'score':mean_scores} #Create dataframe
-    df_scores_source = pd.DataFrame(data_new).sort_values(by=['score'], ascending=False).reset_index(drop=True)
+      keys_list_sources = list(df_final[['source','score','weight']].set_index('score').groupby(by=['source']).groups.keys()) #sources
+      keys_list = list(groups_dict.keys()) #tuples
 
-    return df_scores_target, df_scores_source
+      mean_scores_w = []
+      score_list_w = []
+      length_w = []
+      last_key = keys_list[0][0]
+      for key in keys_list:
+        if key[0] == last_key:
+          score_list_w.append(np.sum(list(groups_dict[key])) * key[1])
+          length_w.append(len(list(groups_dict[key])) * key[1])
+
+          last_key = key[0]
+        else:
+          mean_scores_w.append(np.sum(score_list_w)/np.sum(length_w))
+
+          score_list_w = []
+          length_w = []
+          score_list_w.append(np.sum(list(groups_dict[key])) * key[1])
+          length_w.append(len(list(groups_dict[key])) * key[1])
+          last_key = key[0]
+
+        if key == keys_list[-1]: #last key
+          mean_scores_w.append(np.sum(score_list_w)/np.sum(length_w))
+
+
+      data_new = {'source':[str(key) for key in keys_list_sources], 'score':mean_scores_w} #Create dataframe
+      df_scores_source = pd.DataFrame(data_new).sort_values(by=['score'], ascending=False).reset_index(drop=True)
+          
+    else:
+      groups_dict = df_final[['source','score']].set_index('score').groupby(by=['source']).groups
+      keys_list = list(groups_dict.keys()) #los influencers (son keys)
+      mean_scores = []
+      for key in keys_list:
+        score_list = list(groups_dict[key]) #lista de scores
+        mean_scores.append(np.mean(score_list))
+
+      data_new = {'source':[str(key) for key in keys_list], 'score':mean_scores} #Create dataframe
+      df_scores_source = pd.DataFrame(data_new).sort_values(by=['score'], ascending=False).reset_index(drop=True)
+
+    if detailed_lists:
+      return df_scores_target, df_scores_source, targets_info, sources_info
+    else:
+      return df_scores_target, df_scores_source
